@@ -1,4 +1,4 @@
-.PHONY: test install build
+.PHONY: test install build notebooks
 
 test:
 	uv run pytest
@@ -8,3 +8,6 @@ install:
 
 build:
 	uv build
+
+notebooks:
+	uv run jupyter execute notebooks/deanonymization.ipynb

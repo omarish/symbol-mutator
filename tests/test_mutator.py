@@ -105,35 +105,56 @@ def run():
     assert "os.getcwd()" in mutated
     
     # my_internal_pkg should be preserved in the IMPORT statement because we don't rename files/modules
-    assert "import my_internal_pkg" in mutated
-    # But usages might be renamed if we decided to map 'my_internal_pkg' (which we did in the test setup).
-    # Wait, if `import my_internal_pkg` is preserved, then the symbol `my_internal_pkg` in the code bound to the module
-    # must ALSO be preserved, otherwise `f_internal.do_something()` will fail because `f_internal` is not defined.
-    
-    # If `leave_ImportAlias` reverts `name` to `my_internal_pkg`, and we don't have an `asname`, 
-    # then the bound name is `my_internal_pkg`.
-    # So `leave_Name` logic renaming usages of `my_internal_pkg` to `f_internal` would BREAK the code
-    # because `f_internal` is not imported.
-    
-    # Correct behavior: If we don't rename the module file, we shouldn't rename the symbol that refers to it 
-    # (unless we alias it: `import my_pkg as f_pkg`).
-    
-    # So if `my_internal_pkg` is in mapping... we have a conflict.
-    # The current `SymbolCollector` collects `ClassDef` and `FunctionDef`. It does NOT collect imported modules.
-    # So normally `my_internal_pkg` would NOT be in the mapping.
-    # In this test, we artificially forced it.
-    
-    # If we assume standard usage, `my_internal_pkg` is NOT renamed.
-    # So usages should remain `my_internal_pkg`.
-    
-    # assert "my_internal_pkg.do_something()" in mutated
-    
-    # BUT, what about `from my_internal_pkg import utils`?
-    # `utils` IS defined/imported. Usage `utils.help()` -> `f_utils.help()`.
-    # And the import becomes `from my_internal_pkg import f_utils`.
-    
-    assert "from my_internal_pkg import f_utils" in mutated
+    # my_internal_pkg should be rewritten because it is in the mapping
+    assert "import f_internal" in mutated
+    assert "import my_internal_pkg" not in mutated
+
+    # utils should be rewritten
+    assert "from f_internal import f_utils" in mutated
+
+    # Usage check
+    assert "f_internal.f_do()" in mutated
     assert "f_utils.f_help()" in mutated
+
+def test_benchmark_scenario():
+    # Simulate the benchmark scenario where we want to hide 'flask' and 'requests'
+    code = """
+from flask import Flask
+import requests
+
+app = Flask(__name__)
+r = requests.get('url')
+"""
+    mutator = Mutator(seed=42, theme="gibberish", internal_prefixes=["flask", "requests"])
+    mutated = mutator.mutate_source(code)
+    
+    # Flask check
+    assert "from flask import" not in mutated # Should be renamed
+    # Flask check
+    assert "from flask import" not in mutated # Should be renamed
+    # assert "import Flask" not in mutated # Flask (class) is not renamed yet (future work)
+    assert "import Flask" in mutated # Expect it to remain for now 
+    # Wait, 'from flask import Flask'. 'Flask' is an ImportFrom alias.
+    # SymbolCollector visits ImportFrom.
+    # If we map 'flask', we rename 'flask'. => 'from c_xyz import ...'
+    # SymbolCollector visits ClassDef/FuncDef... does it visit ImportFrom names?
+    # No, it currently visits Import/ImportFrom and adds MODULES to mapping.
+    # It does NOT add the imported names (like 'Flask') to the mapping unless they are defined in scope?
+    # Actually, `SymbolCollector` DOES NOT collect imported names into `defined_classes` or `defined_functions`.
+    # So 'Flask' itself might NOT be renamed unless we add logic for that or if we assume it's "internal" enough?
+    # But let's check the MODULE rename first.
+    
+    # We expect: 'from f_gibberish import ...'
+    assert "from f_" in mutated
+    
+    # Requests check
+    assert "import requests" not in mutated
+    # Should be 'import f_gibberish'
+    assert "import f_" in mutated
+    
+    # Usage check
+    assert "requests.get" not in mutated
+    # Should be 'c_gibberish.get' (Attribute rename handled by leave_Name, renaming 'requests' to 'c_gibberish')
 
 def test_directory_mutation(tmp_path):
     input_dir = tmp_path / "input"

@@ -68,12 +68,54 @@ class SymbolCollector(cst.CSTVisitor):
     """
     First pass: Collects top-level definitions to be renamed.
     """
-    def __init__(self):
+    def __init__(self, internal_prefixes: List[str] = None):
         self.defined_classes: Set[str] = set()
         self.defined_functions: Set[str] = set()
+        self.defined_modules: Set[str] = set()
+        self.internal_prefixes = internal_prefixes or []
+
+    def _is_internal(self, name: str) -> bool:
+        for prefix in self.internal_prefixes:
+            if name == prefix or name.startswith(prefix + "."):
+                return True
+        return False
 
     def visit_ClassDef(self, node: cst.ClassDef) -> None:
         self.defined_classes.add(node.name.value)
+
+    def visit_Import(self, node: cst.Import) -> None:
+        for alias in node.names:
+            mod_name_node = alias.name
+            # Extract full string name
+            parts = []
+            curr = mod_name_node
+            while isinstance(curr, cst.Attribute):
+                parts.append(curr.attr.value)
+                curr = curr.value
+            if isinstance(curr, cst.Name):
+                parts.append(curr.value)
+            full_name = ".".join(reversed(parts))
+            
+            if self._is_internal(full_name):
+                # We want to map the TOP LEVEL module name if it matches
+                # e.g. import flask -> map 'flask'. import flask.app -> map 'flask' (if flask is prefix)
+                # Currently simple logic: map exact match
+                self.defined_modules.add(full_name)
+
+    def visit_ImportFrom(self, node: cst.ImportFrom) -> None:
+        if node.module:
+            # Extract full string name of module
+            parts = []
+            curr = node.module
+            while isinstance(curr, cst.Attribute):
+                parts.append(curr.attr.value)
+                curr = curr.value
+            if isinstance(curr, cst.Name):
+                parts.append(curr.value)
+            full_name = ".".join(reversed(parts))
+            
+            if self._is_internal(full_name):
+                self.defined_modules.add(full_name)
 
     def visit_FunctionDef(self, node: cst.FunctionDef) -> None:
         name = node.name.value
@@ -217,10 +259,41 @@ class SymbolRenamer(cst.CSTTransformer):
         return updated_node
 
     def leave_ImportFrom(self, original_node: cst.ImportFrom, updated_node: cst.ImportFrom) -> cst.ImportFrom:
-         # 1. Revert the module name in all cases (we don't rename files/modules)
-         updated_node = updated_node.with_changes(module=original_node.module)
+         # 1. Determine if we should keep the renamed module or revert
+         module_node = updated_node.module
+         # Check if the module name in 'original_node' is in mapping.
+         # Original node module is a hierarchy of Attributes/Names.
+         # But updated_node.module might already be transformed?
+         # Actually, Generic Visit transforms children first.
+         
+         # Let's check if the intended module name is in our mapping.
+         # Extract original full name
+         if original_node.module:
+            parts = []
+            curr = original_node.module
+            while isinstance(curr, cst.Attribute):
+                parts.append(curr.attr.value)
+                curr = curr.value
+            if isinstance(curr, cst.Name):
+                parts.append(curr.value)
+            full_name = ".".join(reversed(parts))
+            
+            if full_name in self.mapping:
+                # It is mapped. We want the NEW name.
+                # updated_node.module should effectively be the new name IF leave_Name/Attribute worked on it.
+                # But module structure can be complex.
+                # If 'flask' -> 'c_xyz'.
+                # original: Name(flask). updated: Name(c_xyz).
+                # So we likely don't need to do anything if it's already updated.
+                pass 
+            else:
+                 # Not mapped. Revert to original.
+                 updated_node = updated_node.with_changes(module=original_node.module)
+         else:
+             # Relative import (from . import x), no module name to map.
+             pass
 
-         # 2. Revert external imports
+         # 2. Revert external imports (names being imported)
          is_internal = False
          if original_node.relative:
              is_internal = True
@@ -234,18 +307,35 @@ class SymbolRenamer(cst.CSTTransformer):
          return updated_node
 
     def leave_Import(self, original_node: cst.Import, updated_node: cst.Import) -> cst.Import:
-        # For 'import X', X is a module/file. We don't rename files.
-        # So we must always revert the name 'X'.
-        # However, if 'import X as Y', 'Y' is a bound name in this scope.
-        # If 'Y' was collected and mapped (unlikely with current collector), we should keep 'Y' renamed.
-        # But 'X' must be original.
+        # For 'import X', X is a module.
+        # If X is in our mapping (because it was identified as internal), we allow the rename.
+        # Otherwise, we revert.
         
         new_names = []
         for orig_alias, updated_alias in zip(original_node.names, updated_node.names):
-            # Restore the module name.
-            # We keep the updated_alias.asname (if any renames happened there).
-            new_alias = updated_alias.with_changes(name=orig_alias.name)
-            new_names.append(new_alias)
+            mod_name_node = orig_alias.name
+            # Extract full string name to check mapping
+            parts = []
+            curr = mod_name_node
+            while isinstance(curr, cst.Attribute):
+                parts.append(curr.attr.value)
+                curr = curr.value
+            if isinstance(curr, cst.Name):
+                parts.append(curr.value)
+            full_name = ".".join(reversed(parts))
+            
+            if full_name in self.mapping:
+                 # It's mapped! Allow the rename.
+                 # Currently updated_alias might have the renames inside it (via leave_Name/Attribute recursive generic visit?)
+                 # Actually, visit order: Name is visited inside ImportAlias inside Import.
+                 # So updated_alias.name should ALREADY be transformed if leave_Name/Attribute logic applied.
+                 # Let's check leave_Name: Checks if value in mapping. Yes.
+                 # So updated_alias.name should be the new name.
+                 new_names.append(updated_alias)
+            else:
+                 # Revert the module name.
+                 new_alias = updated_alias.with_changes(name=orig_alias.name)
+                 new_names.append(new_alias)
             
         return updated_node.with_changes(names=new_names)
 
@@ -258,7 +348,7 @@ class Mutator:
     def collect_definitions(self, source_code: str) -> None:
         """Pass 1: Parse code and register new symbols."""
         wrapper = cst.MetadataWrapper(cst.parse_module(source_code))
-        collector = SymbolCollector()
+        collector = SymbolCollector(self.internal_prefixes)
         wrapper.visit(collector)
         
         # Generate mappings for new symbols
@@ -269,6 +359,14 @@ class Mutator:
         for func_name in sorted(collector.defined_functions):
             if func_name not in self.mapping:
                 self.mapping[func_name] = self.generator.generate(func_name, kind="function")
+                
+        for mod_name in sorted(collector.defined_modules):
+            # For modules, if they look like "pkg.subpkg", we might want to rename just "pkg"?
+            # Or the whole string?
+            # Current logic: Simple exact match.
+            # If "flask" is collected, we map "flask" -> "c_xyz".
+            if mod_name not in self.mapping:
+                 self.mapping[mod_name] = self.generator.generate(mod_name, kind="variable")
 
     def transform_code(self, source_code: str) -> str:
         """Pass 2: Rename symbols based on existing mapping."""
