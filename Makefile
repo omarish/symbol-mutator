@@ -1,4 +1,4 @@
-.PHONY: test install build notebooks lint format
+.PHONY: test install build notebooks lint format benchmark
 
 test:
 	uv run pytest
@@ -15,5 +15,5 @@ lint:
 format:
 	uv run ruff format .
 
-notebooks:
-	uv run jupyter execute notebooks/deanonymization.ipynb
+benchmark:
+	uv run python -m symbol_mutator.benchmark --targets-dir data/benchmark/targets --providers openai --intensities 1 2 3 4 5

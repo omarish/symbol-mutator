@@ -7,10 +7,16 @@ class LLMProvider(ABC):
     def ask(self, prompt: str) -> str:
         pass
 
+    @abstractmethod
+    async def ask_async(self, prompt: str) -> str:
+        pass
+
 class OpenAIProvider(LLMProvider):
     def __init__(self, api_key: Optional[str] = None, model: str = "gpt-4o"):
-        from openai import OpenAI
-        self.client = OpenAI(api_key=api_key or os.environ.get("OPENAI_API_KEY"))
+        from openai import OpenAI, AsyncOpenAI
+        self.api_key = api_key or os.environ.get("OPENAI_API_KEY")
+        self.client = OpenAI(api_key=self.api_key)
+        self.async_client = AsyncOpenAI(api_key=self.api_key)
         self.model = model
 
     def ask(self, prompt: str) -> str:
@@ -20,14 +26,31 @@ class OpenAIProvider(LLMProvider):
         )
         return response.choices[0].message.content
 
+    async def ask_async(self, prompt: str) -> str:
+        response = await self.async_client.chat.completions.create(
+            model=self.model,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        return response.choices[0].message.content
+
 class AnthropicProvider(LLMProvider):
     def __init__(self, api_key: Optional[str] = None, model: str = "claude-3-5-sonnet-20240620"):
-        from anthropic import Anthropic
-        self.client = Anthropic(api_key=api_key or os.environ.get("ANTHROPIC_API_KEY"))
+        from anthropic import Anthropic, AsyncAnthropic
+        self.api_key = api_key or os.environ.get("ANTHROPIC_API_KEY")
+        self.client = Anthropic(api_key=self.api_key)
+        self.async_client = AsyncAnthropic(api_key=self.api_key)
         self.model = model
 
     def ask(self, prompt: str) -> str:
         message = self.client.messages.create(
+            model=self.model,
+            max_tokens=1000,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        return message.content[0].text
+
+    async def ask_async(self, prompt: str) -> str:
+        message = await self.async_client.messages.create(
             model=self.model,
             max_tokens=1000,
             messages=[{"role": "user", "content": prompt}]
@@ -44,11 +67,20 @@ class GeminiProvider(LLMProvider):
         response = self.model.generate_content(prompt)
         return response.text
 
+    async def ask_async(self, prompt: str) -> str:
+        response = await self.model.generate_content_async(prompt)
+        return response.text
+
 class MockProvider(LLMProvider):
     def __init__(self, **kwargs):
         pass
 
     def ask(self, prompt: str) -> str:
+        return "This is a mock response identifying the library as 'Unknown'."
+
+    async def ask_async(self, prompt: str) -> str:
+        import asyncio
+        await asyncio.sleep(0.1)
         return "This is a mock response identifying the library as 'Unknown'."
 
 def get_provider(name: str, **kwargs) -> LLMProvider:

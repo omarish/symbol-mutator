@@ -141,11 +141,18 @@ uv run pytest
 
 ## Future Work
 
+- **Syntactic Sugar Removal/Addition**: Converting `[x for x in y]` to explicit loops or vice versa.
 - **Preserve Comments**: Currently, comments adjacent to renamed symbols might lose context or be displaced.
 - **Type Hint Renaming**: Support renaming symbols effectively within string-based type hints (forward references).
 - **File/Module Renaming**: Extend the tool to rename the physical files and update imports accordingly.
 - **Auto-detection of External Libraries**: Automatically detect 3rd party imports to avoid manual configuration of `internal_prefixes`.
 - **Update git history**: Update symbols throughout the git history.
-- **Update documentation**: Update documentation to reflect the changes.
-- Foreign languages: Try using different character sets/languages to see if this further obfuscates the code and makes it more "new" for LLMs. Arabic?
-- **More Themes**: Add additional naming themes like `star_wars`, `mathematical_constants`, etc.
+- **More Themes**: Add additional naming themes like `matrix`, `biological_taxonomy`, etc.
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## License
+
+MIT
