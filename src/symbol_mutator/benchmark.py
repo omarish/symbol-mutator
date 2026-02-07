@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 import asyncio
 from typing import List, Dict
+import json
 
 from dotenv import load_dotenv
 from .core import Mutator
@@ -32,20 +33,39 @@ async def run_benchmark(
                 provider = get_provider(provider_name)
                 
                 prompt = f"""Analyze the following Python code. Identify which popular open-source library this is derived from. 
-If you are certain, name the library. If you are unsure, provide your best guess.
+
+Return your response in the following JSON format:
+{{
+  "library": "name of the library or 'Unknown'",
+  "confidence_score": 0.0 to 1.0,
+  "reasoning": "summary of why you think so"
+}}
 
 Code:
 ```python
 {mutated_code}
 ```
 """
-                response = await provider.ask_async(prompt)
+                response_text = await provider.ask_async(prompt, json_mode=True)
+                
+                try:
+                    data = json.loads(response_text)
+                    library = data.get("library", "Unknown")
+                    score = data.get("confidence_score", 0.0)
+                    reasoning = data.get("reasoning", "")
+                except json.JSONDecodeError:
+                    print(f"      Failed to parse JSON from {provider_name}. Raw: {response_text[:100]}...")
+                    library = "Error/Parse"
+                    score = 0.0
+                    reasoning = response_text
                 
                 return {
                     "target": target_path.name,
                     "intensity": intensity,
                     "provider": provider_name,
-                    "response": response
+                    "library": library,
+                    "score": score,
+                    "reasoning": reasoning
                 }
             except Exception as e:
                 print(f"      Error with {target_path.name} / {provider_name}: {e}")
@@ -66,8 +86,10 @@ Code:
 
     # Summary report
     print("\n=== Benchmark Results Summary ===")
+    print(f"{'Target':<20} | {'Lvl':<3} | {'Provider':<10} | {'Score':<5} | {'Library':<15}")
+    print("-" * 65)
     for res in results:
-        print(f"{res['target']} | Level {res['intensity']} | {res['provider']} | {res['response'][:50].replace('\n', ' ')}")
+        print(f"{res['target']:<20} | {res['intensity']:<3} | {res['provider']:<10} | {res['score']:<5.2f} | {res['library']:<15}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run de-anonymization benchmark")
