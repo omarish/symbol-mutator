@@ -32,6 +32,23 @@ class a_1b2c3d:
   - `fantasy`: RPG-style names (e.g., `ShadowWeaver`, `summon_blade`).
 - **Internal/External Awareness**: Can be configured to recognize internal modules (renaming their imports) vs external libraries (preserving their API calls).
 
+## De-anonymization Benchmark
+
+We track the effectiveness of different mutation intensities against frontier LLMs. The goal is to minimize the **Identification Rate (IR)**.
+
+### Current Performance (GPT-4o)
+
+| Intensity Level | Description | Identification Rate (IR) |
+| :--- | :--- | :--- |
+| **Level 0** | Original Code | ~100% |
+| **Level 1** | Deterministic Renaming | ~85% |
+| **Level 2** | Level 1 + Comment Stripping | ~60% |
+| **Level 3** | Level 2 + Multilingual Identifiers | *Pending* |
+| **Level 4** | Level 3 + Structural Obfuscation | *Pending* |
+
+> [!TIP]
+> Run the benchmark with: `uv run python -m symbol_mutator.benchmark --targets-dir data/benchmark/targets --providers openai`
+
 ## Installation
 
 Requires Python 3.12+.
