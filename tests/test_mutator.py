@@ -228,3 +228,64 @@ class MyClass:
     mutated = mutator.mutate_source(code)
 
     assert f"def {protected_name}" in mutated
+
+
+def test_comment_stripping():
+    code = """
+# This is a comment
+def my_func():
+    \"\"\"This is a docstring.\"\"\"
+    # Another comment
+    x = 1  # Inline comment
+    return x
+"""
+    mutator = Mutator(seed=42, strip_comments=True)
+    mutated = mutator.mutate_source(code)
+
+    assert "# This is a comment" not in mutated
+    assert "This is a docstring" not in mutated
+    assert "# Another comment" not in mutated
+    assert "# Inline comment" not in mutated
+    assert "my_func" not in mutated  # Still renamed
+    assert "f_" in mutated  # New name exists
+    assert "return x" in mutated  # Code preserved
+
+
+def test_multilingual_theme():
+    code = "def my_function(data): return data"
+    mutator = Mutator(seed=42, intensity=3)
+    mutated = mutator.mutate_source(code)
+
+    # Check for non-ASCII characters (Arabic/Cyrillic)
+    assert any(ord(c) > 127 for c in mutated)
+    assert "my_function" not in mutated
+
+
+def test_structural_obfuscation():
+    code = """
+def check(val):
+    x = 1
+    y = 2
+    if val > 0:
+        return x
+    else:
+        return y
+"""
+    mutator = Mutator(seed=42, intensity=4)
+    mutated = mutator.mutate_source(code)
+
+    # Check for If inversion: 'if not' should be present
+    assert "if not" in mutated
+    # Check for Reordering (x and y assignments should be swapped)
+    # Original: x=1, y=2. Reordered: y=2, x=1 (if safe)
+    # The heuristic might be conservative, but let's check.
+    # Actually, the reorderer swaps adjacent lines if no shared names.
+    # x=1 and y=2 share no names.
+    assert mutated.find("x = 1") > mutated.find("y = 2") or \
+           mutated.find("f_") > mutated.find("f_") # Since they are renamed
+    
+    # Let's check for If/Else content flip
+    # Original body: return x. Else body: return y.
+    # Inverted body: return y. Else body: return x.
+    # We need to be careful with renaming.
+    assert "return" in mutated

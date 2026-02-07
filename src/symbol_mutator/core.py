@@ -3,12 +3,13 @@ import random
 from pathlib import Path
 
 import libcst as cst
+from libcst.metadata import MetadataWrapper, ParentNodeProvider
 
 
 class NameGenerator:
     """
     Generates deterministic names based on a seed.
-    Supports themes: 'gibberish' (default), 'fantasy'.
+    Supports themes: 'gibberish' (default), 'fantasy', 'multilingual'.
     """
 
     def __init__(self, seed: int, theme: str = "gibberish"):
@@ -114,6 +115,44 @@ class NameGenerator:
             "open",
             "close",
         ]
+        # Multilingual vocabulary (Mix of scripts to break tokenization)
+        self.ml_prefixes = [
+            "معالج",  # Processor (Arabic)
+            "بيانات",  # Data (Arabic)
+            "система",  # System (Cyrillic)
+            "ключ",  # Key (Cyrillic)
+            "код",  # Code (Cyrillic)
+            "функция",  # Function (Cyrillic)
+            "архив",  # Archive (Cyrillic)
+            "главный",  # Main (Cyrillic)
+            "новый",  # New (Cyrillic)
+            "первый",  # First (Cyrillic)
+            "тест",  # Test (Cyrillic)
+            "задача",  # Task (Cyrillic)
+            "логика",  # Logic (Cyrillic)
+            "метод",  # Method (Cyrillic)
+            "ядро",  # Core (Cyrillic)
+            "узел",  # Node (Cyrillic)
+            "сеть",  # Network (Cyrillic)
+            "память",  # Memory (Cyrillic)
+            "поток",  # Flow (Cyrillic)
+        ]
+        self.ml_suffixes = [
+            "объект",  # Object (Cyrillic)
+            "класс",  # Class (Cyrillic)
+            "результат",  # Result (Cyrillic)
+            "ошибка",  # Error (Cyrillic)
+            "вход",  # Input (Cyrillic)
+            "выход",  # Output (Cyrillic)
+            "проверка",  # Verify (Cyrillic)
+            "индекс",  # Index (Cyrillic)
+            "значение",  # Value (Cyrillic)
+            "тип",  # Type (Cyrillic)
+            "имя",  # Name (Cyrillic)
+            "файл",  # File (Cyrillic)
+            "путь",  # Path (Cyrillic)
+            "база",  # Base (Cyrillic)
+        ]
 
     def generate(self, original_name: str, kind: str = "obj") -> str:
         """
@@ -123,6 +162,8 @@ class NameGenerator:
         while True:
             if self.theme == "fantasy":
                 new_name = self._generate_fantasy(original_name, kind)
+            elif self.theme == "multilingual":
+                new_name = self._generate_multilingual(original_name, kind)
             else:
                 new_name = self._generate_gibberish(original_name)
 
@@ -146,12 +187,17 @@ class NameGenerator:
             verb = self.rng.choice(self.fantasy_verbs)
             noun = self.rng.choice(self.fantasy_suffixes).lower()
             return f"{verb}_{noun}"
-        else:  # variables / misc
             return (
                 self.rng.choice(self.fantasy_prefixes).lower()
                 + "_"
                 + self.rng.choice(self.fantasy_prefixes).lower()
             )
+
+    def _generate_multilingual(self, original_name: str, kind: str) -> str:
+        # Mix Arabic and Cyrillic to break English-centric tokenizers
+        prefix = self.rng.choice(self.ml_prefixes)
+        suffix = self.rng.choice(self.ml_suffixes)
+        return f"{prefix}_{suffix}"
 
 
 class SymbolCollector(cst.CSTVisitor):
@@ -339,6 +385,94 @@ class SymbolCollector(cst.CSTVisitor):
             return
 
         self.defined_functions.add(name)
+
+
+class CommentStripper(cst.CSTTransformer):
+    """
+    Removes comments and docstrings.
+    """
+
+    def leave_Comment(
+        self, original_node: cst.Comment, updated_node: cst.Comment
+    ) -> cst.RemovalSentinel:
+        return cst.RemovalSentinel.REMOVE
+
+    def leave_SimpleStatementLine(
+        self, original_node: cst.SimpleStatementLine, updated_node: cst.SimpleStatementLine
+    ) -> cst.SimpleStatementLine | cst.RemovalSentinel:
+        # Check if the whole line is just a docstring
+        if len(original_node.body) == 1 and isinstance(original_node.body[0], cst.Expr):
+            expr = original_node.body[0]
+            if isinstance(expr.value, (cst.SimpleString, cst.ConcatenatedString)):
+                # This might be a docstring.
+                # Strictly speaking, we should check if it's the first statement in a Module, ClassDef, or FunctionDef.
+                # But the roadmap says "remove all comments and docstrings", which often implies these strings.
+                return cst.RemovalSentinel.REMOVE
+        return updated_node
+
+    def leave_EmptyLine(
+        self, original_node: cst.EmptyLine, updated_node: cst.EmptyLine
+    ) -> cst.EmptyLine:
+        # Remove comments from empty lines
+        return updated_node.with_changes(comment=None)
+
+
+class IfElseInverter(cst.CSTTransformer):
+    """
+    Inverts if/else logic: if a: x else: y -> if not a: y else: x
+    """
+
+    def leave_If(self, original_node: cst.If, updated_node: cst.If) -> cst.If:
+        if updated_node.orelse and isinstance(updated_node.orelse, cst.Else):
+            # Only invert if there is an 'else' block
+            new_test = cst.UnaryOperation(operator=cst.Not(), expression=updated_node.test)
+            new_body = updated_node.orelse.body
+            new_orelse = cst.Else(body=updated_node.body)
+            return updated_node.with_changes(test=new_test, body=new_body, orelse=new_orelse)
+        return updated_node
+
+
+class NameCollector(cst.CSTVisitor):
+    def __init__(self):
+        self.names = set()
+
+    def visit_Name(self, node: cst.Name):
+        self.names.add(node.value)
+
+
+class StatementReorderer(cst.CSTTransformer):
+    """
+    Swaps adjacent statements if they look safe to reorder.
+    Very basic heuristic: only swap SimpleStatementLine with no shared names.
+    """
+
+    def leave_IndentedBlock(
+        self, original_node: cst.IndentedBlock, updated_node: cst.IndentedBlock
+    ) -> cst.IndentedBlock:
+        return self._reorder_body(updated_node)
+
+    def leave_Module(self, original_node: cst.Module, updated_node: cst.Module) -> cst.Module:
+        return self._reorder_body(updated_node)
+
+    def _reorder_body(self, node):
+        new_body = list(node.body)
+        for i in range(len(new_body) - 1):
+            s1 = new_body[i]
+            s2 = new_body[i + 1]
+            if isinstance(s1, cst.SimpleStatementLine) and isinstance(
+                s2, cst.SimpleStatementLine
+            ):
+                # Basic safety check: do they share any names? (Very conservative)
+                collector1 = NameCollector()
+                s1.visit(collector1)
+                collector2 = NameCollector()
+                s2.visit(collector2)
+
+                if not (collector1.names & collector2.names):
+                    # Swap!
+                    new_body[i], new_body[i + 1] = new_body[i + 1], new_body[i]
+                    break  # Just one swap for now to be safe
+        return node.with_changes(body=new_body)
 
 
 class SymbolRenamer(cst.CSTTransformer):
@@ -544,10 +678,21 @@ class SymbolRenamer(cst.CSTTransformer):
 
 
 class Mutator:
-    def __init__(self, seed: int, theme: str = "gibberish", internal_prefixes: list[str] = None):
-        self.generator = NameGenerator(seed, theme)
+    def __init__(
+        self,
+        seed: int,
+        theme: str = "gibberish",
+        internal_prefixes: list[str] = None,
+        strip_comments: bool = False,
+        intensity: int = 1,
+    ):
+        # Override theme if intensity >= 3
+        effective_theme = "multilingual" if intensity >= 3 else theme
+        self.generator = NameGenerator(seed, effective_theme)
         self.mapping: dict[str, str] = {}
         self.internal_prefixes = internal_prefixes or []
+        self.strip_comments = strip_comments or intensity >= 2
+        self.intensity = intensity
 
     def collect_definitions(self, source_code: str) -> None:
         """Pass 1: Parse code and register new symbols."""
@@ -576,6 +721,14 @@ class Mutator:
         """Pass 2: Rename symbols based on existing mapping."""
         # Note: We re-parse here. In a stricter implementation we might cache the tree.
         tree = cst.parse_module(source_code)
+
+        if self.strip_comments:
+            tree = tree.visit(CommentStripper())
+
+        if self.intensity >= 4:
+            tree = tree.visit(IfElseInverter())
+            tree = tree.visit(StatementReorderer())
+
         transformer = SymbolRenamer(self.mapping, self.internal_prefixes)
         new_tree = tree.visit(transformer)
         return new_tree.code

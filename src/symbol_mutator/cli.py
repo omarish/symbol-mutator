@@ -15,12 +15,19 @@ def main():
         "--seed", type=int, default=42, help="Random seed for deterministic renaming"
     )
     parser.add_argument(
-        "--theme", choices=["gibberish", "fantasy"], default="gibberish", help="Naming theme"
+        "--theme",
+        choices=["gibberish", "fantasy", "multilingual"],
+        default="gibberish",
+        help="Naming theme",
     )
+    parser.add_argument("--intensity", type=int, default=1, help="Obfuscation intensity level (1-4)")
     parser.add_argument(
         "--internal-prefix",
         action="append",
         help="Prefix of internal modules (e.g. 'flask') to allow renaming import targets.",
+    )
+    parser.add_argument(
+        "--strip-comments", action="store_true", help="Remove all comments and docstrings"
     )
 
     args = parser.parse_args()
@@ -29,7 +36,13 @@ def main():
         print(f"Error: Target path {args.target} does not exist.")
         sys.exit(1)
 
-    mutator = Mutator(seed=args.seed, theme=args.theme, internal_prefixes=args.internal_prefix)
+    mutator = Mutator(
+        seed=args.seed,
+        theme=args.theme,
+        internal_prefixes=args.internal_prefix,
+        strip_comments=args.strip_comments,
+        intensity=args.intensity,
+    )
 
     if args.target.is_file():
         # Single file case
