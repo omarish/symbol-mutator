@@ -34,21 +34,9 @@ class a_1b2c3d:
 
 ## De-anonymization Benchmark
 
-We track the effectiveness of different mutation intensities against frontier LLMs. The goal is to minimize the **Identification Rate (IR)**.
+We maintain a de-anonymization benchmark to track the effectiveness of different mutation intensities against frontier LLMs.
 
-### Current Performance (GPT-4o)
-
-| Intensity Level | Description | Identification Rate (IR) |
-| :--- | :--- | :--- |
-| **Level 0** | Original Code | ~100% |
-| **Level 1** | Deterministic Renaming | 79% |
-| **Level 2** | Level 1 + Comment Stripping | 73% |
-| **Level 3** | Level 2 + Multilingual Identifiers | 83% |
-| **Level 4** | Level 3 + Structural Obfuscation | 79% |
-| **Level 5** | Level 4 + Context & Local Obfuscation | **51%** |
-
-> [!TIP]
-> Run the benchmark with: `uv run python -m symbol_mutator.benchmark --targets-dir data/benchmark/targets --providers openai`
+See [BENCHMARK.md](BENCHMARK.md) for current performance metrics and methodology.
 
 ## Installation
 
