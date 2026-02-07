@@ -41,11 +41,11 @@ We track the effectiveness of different mutation intensities against frontier LL
 | Intensity Level | Description | Identification Rate (IR) |
 | :--- | :--- | :--- |
 | **Level 0** | Original Code | ~100% |
-| **Level 1** | Deterministic Renaming | ~85% |
-| **Level 2** | Level 1 + Comment Stripping | ~60% |
-| **Level 3** | Level 2 + Multilingual Identifiers | *Pending* |
-| **Level 4** | Level 3 + Structural Obfuscation | *Pending* |
-| **Level 5** | Level 4 + Context & Local Obfuscation | *Pending* |
+| **Level 1** | Deterministic Renaming | 79% |
+| **Level 2** | Level 1 + Comment Stripping | 73% |
+| **Level 3** | Level 2 + Multilingual Identifiers | 83% |
+| **Level 4** | Level 3 + Structural Obfuscation | 79% |
+| **Level 5** | Level 4 + Context & Local Obfuscation | **51%** |
 
 > [!TIP]
 > Run the benchmark with: `uv run python -m symbol_mutator.benchmark --targets-dir data/benchmark/targets --providers openai`
