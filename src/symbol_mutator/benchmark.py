@@ -67,7 +67,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run de-anonymization benchmark")
     parser.add_argument("--targets-dir", type=Path, required=True, help="Directory containing target code snippets")
     parser.add_argument("--providers", nargs="+", default=["openai"], help="LLM providers to test")
-    parser.add_argument("--intensities", nargs="+", type=int, default=[1, 2], help="Mutation intensity levels")
+    parser.add_argument("--intensities", nargs="+", type=int, default=[1, 2, 3, 4, 5], help="Mutation intensity levels")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
 
     args = parser.parse_args()

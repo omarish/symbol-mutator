@@ -209,6 +209,9 @@ class SymbolCollector(cst.CSTVisitor):
         self.defined_classes: set[str] = set()
         self.defined_functions: set[str] = set()
         self.defined_modules: set[str] = set()
+        self.defined_params: set[str] = set()
+        self.defined_locals: set[str] = set()
+        self.defined_attributes: set[str] = set()
         self.internal_prefixes = internal_prefixes or []
 
     def _is_internal(self, name: str) -> bool:
@@ -386,6 +389,30 @@ class SymbolCollector(cst.CSTVisitor):
 
         self.defined_functions.add(name)
 
+    def visit_Assign(self, node: cst.Assign) -> None:
+        for target in node.targets:
+            self._collect_target_names(target.target)
+
+    def visit_AnnAssign(self, node: cst.AnnAssign) -> None:
+        self._collect_target_names(node.target)
+
+    def _collect_target_names(self, node: cst.CSTNode) -> None:
+        if isinstance(node, cst.Name):
+            # Likely a local variable or global variable
+            if node.value not in self.defined_classes and node.value not in self.defined_functions:
+                self.defined_locals.add(node.value)
+        elif isinstance(node, cst.Attribute):
+            if isinstance(node.value, cst.Name) and node.value.value == "self":
+                self.defined_attributes.add(node.attr.value)
+        elif isinstance(node, (cst.Tuple, cst.List)):
+            for element in node.elements:
+                self._collect_target_names(element.value)
+
+    def visit_Param(self, node: cst.Param) -> None:
+        name = node.name.value
+        if name not in {"self", "cls"}:
+            self.defined_params.add(name)
+
 
 class CommentStripper(cst.CSTTransformer):
     """
@@ -410,11 +437,39 @@ class CommentStripper(cst.CSTTransformer):
                 return cst.RemovalSentinel.REMOVE
         return updated_node
 
-    def leave_EmptyLine(
-        self, original_node: cst.EmptyLine, updated_node: cst.EmptyLine
-    ) -> cst.EmptyLine:
         # Remove comments from empty lines
         return updated_node.with_changes(comment=None)
+
+
+class MetadataScrubber(cst.CSTTransformer):
+    """
+    Removes metadata assignments like __version__, __author__.
+    """
+
+    def leave_Assign(self, original_node: cst.Assign, updated_node: cst.Assign) -> cst.Assign | cst.RemovalSentinel:
+        protected = {"__version__", "__author__", "__email__", "__license__"}
+        for target in updated_node.targets:
+            if isinstance(target.target, cst.Name) and target.target.value in protected:
+                return cst.RemovalSentinel.REMOVE
+        return updated_node
+
+
+class WhitespacePerturber(cst.CSTTransformer):
+    """
+    Randomizes horizontal whitespace.
+    """
+
+    def __init__(self, rng: random.Random):
+        self.rng = rng
+
+    def leave_SimpleWhitespace(
+        self, original_node: cst.SimpleWhitespace, updated_node: cst.SimpleWhitespace
+    ) -> cst.SimpleWhitespace:
+        # Vary spacing slightly if it's not empty
+        if original_node.value != "":
+            spaces = self.rng.randint(1, 3)
+            return updated_node.with_changes(value=" " * spaces)
+        return updated_node
 
 
 class IfElseInverter(cst.CSTTransformer):
@@ -717,6 +772,19 @@ class Mutator:
             if mod_name not in self.mapping:
                 self.mapping[mod_name] = self.generator.generate(mod_name, kind="variable")
 
+        if self.intensity >= 5:
+            for param_name in sorted(collector.defined_params):
+                if param_name not in self.mapping:
+                    self.mapping[param_name] = self.generator.generate(param_name, kind="variable")
+
+            for local_name in sorted(collector.defined_locals):
+                if local_name not in self.mapping:
+                    self.mapping[local_name] = self.generator.generate(local_name, kind="variable")
+
+            for attr_name in sorted(collector.defined_attributes):
+                if attr_name not in self.mapping:
+                    self.mapping[attr_name] = self.generator.generate(attr_name, kind="variable")
+
     def transform_code(self, source_code: str) -> str:
         """Pass 2: Rename symbols based on existing mapping."""
         # Note: We re-parse here. In a stricter implementation we might cache the tree.
@@ -728,6 +796,10 @@ class Mutator:
         if self.intensity >= 4:
             tree = tree.visit(IfElseInverter())
             tree = tree.visit(StatementReorderer())
+
+        if self.intensity >= 5:
+            tree = tree.visit(MetadataScrubber())
+            tree = tree.visit(WhitespacePerturber(self.generator.rng))
 
         transformer = SymbolRenamer(self.mapping, self.internal_prefixes)
         new_tree = tree.visit(transformer)

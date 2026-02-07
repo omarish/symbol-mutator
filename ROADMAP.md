@@ -64,5 +64,6 @@ We must ensure we haven't broken the code.
 2. [x] Build the **De-anonymization Benchmark** script.
 3. [x] Implement **Unicode/Multilingual Themes** (High impact on tokenization).
 4. [x] Implement **Structural Obfuscation** (Statement reordering, if/else inversion).
-5. [ ] Implement **Context Removal** (Scrubbing metadata, docstring rewriting).
-6. [ ] Implement **Syntactic Sugar Removal/Addition**.
+5. [x] Implement **Context Removal** (Scrubbing metadata, full variable renaming).
+6. [x] Implement **Whitespace Perturbation**.
+7. [ ] Implement **Syntactic Sugar Removal/Addition**.

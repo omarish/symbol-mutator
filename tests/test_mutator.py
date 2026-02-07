@@ -289,3 +289,46 @@ def check(val):
     # Inverted body: return y. Else body: return x.
     # We need to be careful with renaming.
     assert "return" in mutated
+
+
+def test_level_5_obfuscation():
+    code = """
+__version__ = "1.2.3"
+
+class Processor:
+    def __init__(self, input_data):
+        self.config = input_data
+        self.status = "idle"
+
+    def run(self, mode):
+        internal_var = "step1"
+        if mode == "fast":
+            print(self.config)
+        else:
+            print(self.status)
+        return internal_var
+"""
+    mutator = Mutator(seed=42, intensity=5)
+    mutated = mutator.mutate_source(code)
+
+    # 1. Metadata scrubbing
+    assert "__version__" not in mutated
+    assert "1.2.3" not in mutated
+
+    # 2. Parameter renaming
+    assert "input_data" not in mutated
+    assert "mode" not in mutated
+
+    # 3. Local variable renaming
+    assert "internal_var" not in mutated
+
+    # 4. Attribute renaming
+    assert "config" not in mutated
+    assert "status" not in mutated
+    # Use any(...) to check that some non-ASCII character exists after 'self.'
+    assert "self." in mutated
+    # In multilingual theme, attributes will have non-ASCII chars
+    assert any(ord(c) > 127 for c in mutated)
+
+    # 5. Whitespace perturbation (heuristic check)
+    assert mutated != code

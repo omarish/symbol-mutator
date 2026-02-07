@@ -45,6 +45,7 @@ We track the effectiveness of different mutation intensities against frontier LL
 | **Level 2** | Level 1 + Comment Stripping | ~60% |
 | **Level 3** | Level 2 + Multilingual Identifiers | *Pending* |
 | **Level 4** | Level 3 + Structural Obfuscation | *Pending* |
+| **Level 5** | Level 4 + Context & Local Obfuscation | *Pending* |
 
 > [!TIP]
 > Run the benchmark with: `uv run python -m symbol_mutator.benchmark --targets-dir data/benchmark/targets --providers openai`
